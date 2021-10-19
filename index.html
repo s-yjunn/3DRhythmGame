@@ -1,0 +1,213 @@
+
+<!DOCTYPE html>
+<head>
+<title>Final Project</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Bangers&effect=fire-animation|3d|anaglyph">
+<link rel="stylesheet" href="arrowStyle.css">
+<script src="three.min.js"></script>
+<script src="KeyboardState.js"></script>
+<script src="GLTFLoader.js"></script>
+<script src="loadGLB.js"></script>
+<script src="animations.js"></script>
+<script src="arrowPlay.js"></script>
+
+<!-- Background Music:
+  Music: Zen Garden by Shane Ivers - https://www.silvermansound.com
+  Licensed under Creative Commons Attribution 4.0 International License
+  https://creativecommons.org/licenses/by/4.0/
+  Music promoted by https://www.chosic.com/ -->
+
+<script>
+    // Size of the window
+    var windowWidth;
+    var windowHeight;
+
+    var scene, camera, renderer; // Three.js rendering basics.
+    var canvas; // The canvas on which the image is rendered.
+    var light;
+
+    // This will hold the loaded objects
+    var head, body, leftHand, rightHand, leftLeg, rightLeg;
+    var leftLegPivot, rightLegPivot;
+    var character;
+
+    // grounds and backwalls
+    var grounds = [], backstages = [];
+    var rightStageCount = 0;
+    var groundTextures = ["TextureMaps/Concrete-0194.jpg", "TextureMaps/Brick-2379.jpg", "TextureMaps/Gravel-2408b.jpg", "TextureMaps/Concrete-0201.jpg"];
+    var groundBumps = ["TextureMaps/Concrete-0194-bump-map.jpg", "TextureMaps/Brick-2379-bump-map.jpg", "TextureMaps/Gravel-2408b-bump-map.jpg", "TextureMaps/Concrete-0201-bump-map.jpg"];
+    var stageTextures = ["TextureMaps/BackImage1.jpeg", "TextureMaps/BackImage2.jpeg", "TextureMaps/BackImage3.jpeg", "TextureMaps/BackImage4.jpeg"];
+
+    // loader
+    var loader = new THREE.TextureLoader();
+
+    // Create the scene. This function is called once, as soon as the page loads.
+    // The renderer has already been created before this function is called.
+    function createWorld() {
+        
+        renderer.setClearColor(0); // Set background color (0, or 0x000000, is black).
+        scene = new THREE.Scene(); // Create a new scene which we can add objects to.
+    
+        // create a camera, sitting on the positive z-axis.  The camera is not part of the scene.
+        camera = new THREE.PerspectiveCamera(60, canvas.width/canvas.height, 1, 5000);
+        camera.position.set(0,3.5,7.5);
+        camera.rotation.x = -0.02;
+        camera.recieveShadow = true;
+        camera.castShadow = true;
+        
+        // Add lights
+        var ambientLight = new THREE.AmbientLight(0xffffff,0.3);
+        scene.add(ambientLight);
+        var ambientLight2 = new THREE.AmbientLight(0xffe2ff,0.95);
+        scene.add(ambientLight2);
+
+        light = new THREE.PointLight( 0x484df9, 1, 100 );
+        light.position.set( 4, 8, 1 );
+        light.castShadow = true;
+        scene.add(light);
+        light.shadow.mapSize.width = 512; // default
+        light.shadow.mapSize.height = 512; // default
+        light.shadow.camera.near = 0.5; // default
+        light.shadow.camera.far = 500; // default
+
+        // Create stage
+        createNewStage();
+
+        character = new THREE.Object3D();
+        // Load character glTF resources
+        loadGLB();
+        character.castShadow = true;
+        scene.add(character);
+
+        requestAnimationFrame( render );
+    }
+
+    /**
+     * The funtion is called when the camera is about to catch the view of the next stage.
+     * Create the next stage (including ground and backwall) to the right of the current stage. 
+     * Delete the previous stage since it's no longer visible to user.
+     */
+    function createNewStage(){
+      var stageCount = rightStageCount;
+
+      // Create ground and apply bump map to it
+      var groundGeometry = new THREE.PlaneGeometry(50, 25);
+      var groundMaterial = new THREE.MeshPhongMaterial( { color: 0xcbaef9, shininess: 0.5, bumpScale: 0.01, side: THREE.DoubleSide } );
+      var groundTexture = loader.load(groundTextures[stageCount % 4]);
+      groundTexture.wrapS = THREE.RepeatWrapping;
+      groundTexture.wrapT = THREE.RepeatWrapping;
+      groundTexture.repeat.set( 20, 10 ); // three times in u and v
+      var groundBump = loader.load(groundBumps[stageCount % 4]);
+      groundBump.wrapS = THREE.RepeatWrapping;
+      groundBump.wrapT = THREE.RepeatWrapping;
+      groundBump.repeat.set( 20, 10 ); // three times in u and v
+      groundMaterial.map = groundTexture;
+      groundMaterial.bumpMap = groundBump;
+      var ground = new THREE.Mesh(groundGeometry, groundMaterial);
+      ground.shading = THREE.FlatShading;
+      ground.rotation.x = Math.PI/2;
+      ground.position.y = -0.6;
+      ground.position.x = 50 * stageCount;
+      ground.receiveShadow = true;
+      grounds.push(ground);
+      scene.add( ground );
+
+      // Create backwall (backstage)
+      const backGeometry = new THREE.PlaneGeometry( 50, 28, 32 );
+      const backMaterial = new THREE.MeshPhongMaterial( {color: 'white', side: THREE.DoubleSide, shininess: 5, flatShading: true} );
+      backMaterial.map = loader.load(stageTextures[stageCount % 4]);
+      var backstage = new THREE.Mesh( backGeometry, backMaterial );
+      backstage.position.set(50 * stageCount, 7, -10);
+      backstages.push(backstage);
+      scene.add( backstage );
+
+      // Since we are only moving right, we can delete the grounds and backstages that are no longer visible to us
+      if (grounds.length == 3){
+        scene.remove(grounds[0]);
+        grounds[0].geometry.dispose();
+        grounds[0].material.dispose();
+        grounds[0] = undefined;
+        grounds.shift();
+
+        scene.remove(backstages[0]);
+        backstages[0].geometry.dispose();
+        backstages[0].material.dispose();
+        backstages[0] = undefined;
+        backstages.shift();
+      }
+
+      // Increment the stage count to help calculate the position of next created planes
+      rightStageCount++;
+      console.log(ground.position.x + " " + backstage.position.x);
+    }
+
+    // Render the scene. This is called for each frame of the animation.
+    function render() {
+      updateAnimation();
+      requestAnimationFrame( render );
+      renderer.render(scene, camera);
+    }
+
+    // Position the arrows and receive boxes according to window Size
+    function positionArrows(){
+      var widthUnit = windowWidth / 5.5;
+      document.getElementById("leftBox").style.left = widthUnit + "px";
+      document.getElementById("leftRoute").style.left = widthUnit + "px";
+      document.getElementById("rightBox").style.left = 2 * widthUnit + "px";
+      document.getElementById("rightRoute").style.left = 2 * widthUnit + "px";
+      document.getElementById("upBox").style.left = 3 * widthUnit + "px";
+      document.getElementById("upRoute").style.left = 3 * widthUnit + "px";
+      document.getElementById("downBox").style.left = 4 * widthUnit + "px";
+      document.getElementById("downRoute").style.left = 4 * widthUnit + "px";
+    }
+
+    //----------------------------------------------------------------------------------
+
+    // The init() function is called by the onload event when the document has loaded.
+    function init() {
+        try {
+            canvas = document.getElementById("glcanvas");
+            renderer = new THREE.WebGLRenderer( { canvas: canvas, antialias: true} );
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+
+            windowWidth = document.body.clientWidth;
+            windowHeight = document.body.clientHeight;
+            positionArrows();
+        }
+        catch (e) {
+            document.getElementById("canvas-holder").innerHTML = "<h3><b>WebGL is not available.</b><h3>";
+            return;
+        }
+    
+        // create world and render scene
+        createWorld();
+        bgm = new sound("zen-garden.mp3");
+    }
+
+</script>
+</head>
+
+<body onload="init()">
+<div id="canvas-holder">
+    <canvas id="glcanvas" width="600" height="400"></canvas>  
+</div>
+
+<div id="leftRoute" class='routes'></div>
+<div id="rightRoute" class='routes'></div>
+<div id="upRoute" class='routes'></div>
+<div id="downRoute" class='routes'></div>
+
+<img id="leftBox" class='receivebox' src="arrows/leftReceive.PNG" alt="left arrow box">
+<img id="rightBox" class='receivebox' src="arrows/rightReceive.PNG" alt="right arrow box">
+<img id="upBox" class='receivebox' src="arrows/upReceive.PNG" alt="up arrow box">
+<img id="downBox" class='receivebox' src="arrows/downReceive.PNG" alt="down arrow box">
+
+<button id="startbtn" onclick="startGame()">START</button>
+<button id="stopbtn" onclick="stopGame()" disabled>STOP</button>
+<p id='message' class="font-effect-fire"></p>
+<p id='score'>Score: <span id='scoreNum'>0</span></p>
+</body>
+</html>
